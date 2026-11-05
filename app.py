@@ -140,11 +140,14 @@ elif page.startswith("2"):
         method = st.selectbox("Method", ("auto (backtest winner)",
                                          "holt_winters", "snaive7", "yoy_snaive364"))
         if st.button("Run M1", type="primary"):
-            m = "auto" if method.startswith("auto") else method
-            res = mbms.run_model(con, "M1", {"hotel": hotel, "horizon": horizon,
-                                             "method": m},
-                                 scenario_name=f"ui-M1-{hotel}")
-            st.session_state["m1"] = res
+            try:
+                m = "auto" if method.startswith("auto") else method
+                res = mbms.run_model(con, "M1", {"hotel": hotel, "horizon": horizon,
+                                                 "method": m},
+                                     scenario_name=f"ui-M1-{hotel}")
+                st.session_state["m1"] = res
+            except Exception as e:
+                st.error(f"M1 failed: {e}")
     res = st.session_state.get("m1")
     if res:
         st.success(f"method **{res['method']}** · total forecast rooms over "
@@ -192,11 +195,25 @@ elif page.startswith("3"):
         rooms = c3.number_input("Rooms requested", 1, 100, 25)
         rate = st.number_input("Group rate (€/night)", 1.0, 500.0, 82.0, 5.0)
         if st.button("Run M2", type="primary"):
-            res = mbms.run_model(con, "M2", {
-                "hotel": hotel, "arrival_date": str(arrival),
-                "nights": int(nights), "rooms": int(rooms), "rate": float(rate)},
-                scenario_name=f"ui-M2-{hotel}")
-            st.session_state["m2"] = res
+            try:
+                res = mbms.run_model(con, "M2", {
+                    "hotel": hotel, "arrival_date": str(arrival),
+                    "nights": int(nights), "rooms": int(rooms), "rate": float(rate)},
+                    scenario_name=f"ui-M2-{hotel}")
+                st.session_state["m2"] = res
+            except ValueError as e:
+                ph = con.execute("""
+                    SELECT AVG(f.ADR) FROM fact_room_night f
+                    JOIN dim_hotel h USING (HotelKey) JOIN dim_date d USING (DateKey)
+                    JOIN dim_market_segment s USING (MarketSegmentKey)
+                    WHERE h.HotelCode = ? AND f.IsCanceled = 0
+                      AND s.MarketSegment <> 'Groups'
+                      AND d.Season = (SELECT Season FROM dim_date
+                                      WHERE DateKey = ?)""",
+                    [hotel, int(str(arrival).replace('-', ''))]).fetchone()[0]
+                st.error(f"{e}. The transient rate p_H for this context is about "
+                         f"€{ph:.2f} -- lower the group rate below it "
+                         f"(a typical group discount is 70% of p_H).")
         res = st.session_state.get("m2")
         if res:
             v = res["accept"]
@@ -223,14 +240,17 @@ elif page.startswith("3"):
             ])
         offers = st.data_editor(st.session_state["offers"], num_rows="dynamic")
         if st.button("Run M3", type="primary"):
-            offers = offers.dropna(subset=["arrival", "nights", "rooms", "room_type", "rate"])
-            payload = [{"arrival": str(o.arrival)[:10], "nights": int(o.nights),
-                        "rooms": int(o.rooms), "room_type": str(o.room_type).strip(),
-                        "rate": float(o.rate)} for o in offers.itertuples()]
-            res = mbms.run_model(con, "M3", {
-                "hotel": hotel, "start_date": str(start), "end_date": str(end),
-                "offers": payload}, scenario_name=f"ui-M3-{hotel}")
-            st.session_state["m3"] = res
+            try:
+                offers = offers.dropna(subset=["arrival", "nights", "rooms", "room_type", "rate"])
+                payload = [{"arrival": str(o.arrival)[:10], "nights": int(o.nights),
+                            "rooms": int(o.rooms), "room_type": str(o.room_type).strip(),
+                            "rate": float(o.rate)} for o in offers.itertuples()]
+                res = mbms.run_model(con, "M3", {
+                    "hotel": hotel, "start_date": str(start), "end_date": str(end),
+                    "offers": payload}, scenario_name=f"ui-M3-{hotel}")
+                st.session_state["m3"] = res
+            except Exception as e:
+                st.error(f"M3 failed: {e}")
         res = st.session_state.get("m3")
         if res:
             st.success(f"Optimal revenue Z* = €{res['optimal_revenue']:,.0f}")
@@ -248,10 +268,13 @@ elif page.startswith("3"):
         cutoff = c2.slider("Cut-off h (days before arrival)", 1, 30, 7)
         cw = c3.slider("Walk cost multiple (× ADR)", 0.5, 3.0, 1.5, 0.1)
         if st.button("Run M4", type="primary"):
-            res = mbms.run_model(con, "M4", {
-                "hotel": hotel, "season": season, "cutoff": int(cutoff),
-                "walk_cost_multiple": float(cw)}, scenario_name=f"ui-M4-{hotel}")
-            st.session_state["m4"] = res
+            try:
+                res = mbms.run_model(con, "M4", {
+                    "hotel": hotel, "season": season, "cutoff": int(cutoff),
+                    "walk_cost_multiple": float(cw)}, scenario_name=f"ui-M4-{hotel}")
+                st.session_state["m4"] = res
+            except Exception as e:
+                st.error(f"M4 failed: {e}")
         res = st.session_state.get("m4")
         if res:
             c1, c2, c3, c4 = st.columns(4)
@@ -275,10 +298,13 @@ elif page.startswith("3"):
         uplift = c2.slider("RevPAR target uplift", 5, 100, 20, 5, format="%d%%")
         e = st.slider("Price elasticity e (assumed)", -0.95, -0.05, -0.8, 0.05)
         if st.button("Run M5", type="primary"):
-            res = mbms.run_model(con, "M5", {
-                "hotel": hotel, "season": season, "elasticity": float(e),
-                "target_uplift": uplift / 100.0}, scenario_name=f"ui-M5-{hotel}")
-            st.session_state["m5"] = res
+            try:
+                res = mbms.run_model(con, "M5", {
+                    "hotel": hotel, "season": season, "elasticity": float(e),
+                    "target_uplift": uplift / 100.0}, scenario_name=f"ui-M5-{hotel}")
+                st.session_state["m5"] = res
+            except Exception as e:
+                st.error(f"M5 failed: {e}")
         res = st.session_state.get("m5")
         if res:
             b = res["baseline"]
