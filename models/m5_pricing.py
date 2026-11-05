@@ -45,6 +45,43 @@ def required_adr(occ0: float, adr0: float, e: float, target: float) -> float:
     return float(optimize.brentq(revpar_minus_target, lo, hi))
 
 
+def sensitivity_levels(occ0: float, adr0: float, e: float, target: float,
+                      levels=(-20, -10, -5, 5, 10, 20)) -> dict:
+    """Multi-level one-way sensitivity of the required ADR (7 points/parameter).
+
+    Each point is the closed form evaluated at that parameter level with the
+    other three held at base. Points carry the raw value and an in-bracket
+    flag, where the bracket is the economic search range of the goal seeking
+    itself ([0.1*ADR0, 12*ADR0]); a point outside it is mathematically valid
+    but economically absurd, and the interface marks it as such.
+    """
+    br_lo, br_hi = 0.1 * adr0, 12.0 * adr0
+
+    def _cf(o, a, ee, t):
+        if 1 + ee <= 1e-9:          # well-posedness boundary (e <= -1)
+            raise ValueError
+        return (t / (o * a ** (-ee))) ** (1 / (1 + ee))
+
+    def curve(fn):
+        out = []
+        for lv in levels:
+            k = 1 + lv / 100.0
+            try:
+                v = float(fn(k))
+                out.append({"pct": lv, "adr": round(v, 2),
+                            "in_bracket": br_lo <= v <= br_hi})
+            except (ValueError, ZeroDivisionError, OverflowError):
+                out.append({"pct": lv, "adr": None, "in_bracket": False})
+        return out
+
+    return {
+        "elasticity":   curve(lambda k: _cf(occ0, adr0, e * k, target)),
+        "occupancy":    curve(lambda k: _cf(occ0 * k, adr0, e, target)),
+        "baseline_adr": curve(lambda k: _cf(occ0, adr0 * k, e, target)),
+        "target":       curve(lambda k: _cf(occ0, adr0, e, target * k)),
+    }
+
+
 def run(con, params: dict) -> dict:
     hotel = params["hotel"]
     season = params["season"]
@@ -93,5 +130,6 @@ def run(con, params: dict) -> dict:
         "adr_increase_pct": round(100 * (a_req / adr0 - 1), 1),
         "occupancy_at_required_adr": round(occ_req, 4),
         "tornado": tornado,
+        "sensitivity": sensitivity_levels(occ0, adr0, e, target),
         "headline_kpi": round(a_req, 2),
     }

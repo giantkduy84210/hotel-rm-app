@@ -355,6 +355,93 @@ elif page.startswith("3"):
                               xaxis_title="required ADR (€)")
             st.plotly_chart(fig, use_container_width=True)
 
+            sens = res.get("sensitivity")
+            if sens:
+                # ---- B: per-parameter mini tornados, 3 nested levels each ----
+                from plotly.subplots import make_subplots
+                st.markdown("**Tornado 7 mức — từng tham số riêng** (±5 nhạt / ±10 vừa / "
+                            "±20 đậm, mỗi ô thang đo riêng; đưa chuột lên tay để xem giá trị):")
+                figB = make_subplots(rows=2, cols=2,
+                                     subplot_titles=("elasticity e", "occupancy occ₀",
+                                                     "baseline ADR₀", "target uplift"))
+                for key, r, c in [("elasticity", 1, 1), ("occupancy", 1, 2),
+                                  ("baseline_adr", 2, 1), ("target", 2, 2)]:
+                    pts = sens[key]
+                    invals = [q["adr"] for q in pts if q["adr"] is not None and q["in_bracket"]]
+                    lo = min(invals + [res["required_adr"]])
+                    hi = max(invals + [res["required_adr"]])
+                    pad = (hi - lo) * 0.15
+                    lo, hi = lo - pad, hi + pad
+                    base_v = res["required_adr"]
+                    for d, op in ((5, 0.35), (10, 0.65), (20, 1.0)):
+                        for sgn, color in ((-1, "#EF553B"), (1, "#636EFA")):
+                            q = next(z for z in pts if z["pct"] == sgn * d)
+                            if q["adr"] is None:
+                                continue
+                            if q["in_bracket"]:
+                                v = max(lo, min(hi, q["adr"]))
+                                anchor = min(base_v, v)
+                                figB.add_bar(
+                                    y=[""], orientation="h", base=[anchor],
+                                    x=[abs(v - anchor)], marker_color=color,
+                                    opacity=op, row=r, col=c, showlegend=False,
+                                    hovertext=[f"{key} {'−' if sgn < 0 else '+'}{d}% → €{q['adr']:,.0f}"],
+                                    hoverinfo="text")
+                            else:  # beyond bracket: ghost arm + annotation
+                                figB.add_bar(
+                                    y=[""], orientation="h", base=[base_v],
+                                    x=[hi - base_v], marker_color=color,
+                                    opacity=0.15, row=r, col=c, showlegend=False,
+                                    hovertext=[f"{key} {'−' if sgn < 0 else '+'}{d}% → €{q['adr']:,.0f} (ngoài bracket)"],
+                                    hoverinfo="text")
+                                figB.add_annotation(
+                                    row=r, col=c, showarrow=False, x=hi, y=0,
+                                    xanchor="right", text=f"→ €{q['adr']:,.0f} ngoài bracket",
+                                    font=dict(size=9, color="#B91C1C"))
+                    figB.add_vline(x=base_v, line_dash="dot", row=r, col=c)
+                figB.update_layout(barmode="overlay", height=480, showlegend=False,
+                                   margin=dict(l=10, r=10, t=28, b=10))
+                figB.update_xaxes(title_text="required ADR (€)")
+                figB.update_yaxes(showticklabels=False)
+                st.plotly_chart(figB, use_container_width=True)
+
+                # ---- C: spider — 4 curves through 7 levels, log scale ----
+                st.markdown("**Spider — 4 đường qua 7 mức, thang log**: thấy cả hình dáng "
+                            "phản hồi; đường elasticity phóng thẳng đứng khi e → −1 "
+                            "(điểm ngoài bracket vẫn vẽ, có ghi chú khi đưa chuột):")
+                figC = go.Figure()
+                lvls = [-20, -10, -5, 0, 5, 10, 20]
+                labs = ["−20%", "−10%", "−5%", "0%", "+5%", "+10%", "+20%"]
+                ccolors = {"elasticity": "#636EFA", "occupancy": "#EF553B",
+                           "baseline_adr": "#00CC96", "target": "#AB63FA"}
+                for key, title in [("elasticity", "elasticity e"),
+                                   ("occupancy", "occupancy occ₀"),
+                                   ("baseline_adr", "baseline ADR₀"),
+                                   ("target", "target uplift")]:
+                    pts = sens[key]
+                    xs, ys, hts = [], [], []
+                    for lv, lab in zip(lvls, labs):
+                        if lv == 0:
+                            v, note = res["required_adr"], ""
+                        else:
+                            q = next(z for z in pts if z["pct"] == lv)
+                            v = q["adr"]
+                            note = "" if (v is None or q["in_bracket"]) else " (ngoài bracket)"
+                        xs.append(lab)
+                        ys.append(v)
+                        hts.append(f"{title} {lab} → " + (f"€{v:,.0f}{note}" if v is not None else "không tính được"))
+                    figC.add_scatter(x=xs, y=ys, mode="lines+markers",
+                                     name=title, line=dict(color=ccolors[key], width=2),
+                                     hovertext=hts, hoverinfo="text")
+                figC.add_hline(y=res["required_adr"], line_dash="dot",
+                               annotation_text=f"base = €{res['required_adr']:.2f}")
+                figC.update_layout(yaxis_type="log", height=360,
+                                   xaxis_title="thay đổi tham số",
+                                   yaxis_title="required ADR (€, thang log)",
+                                   margin=dict(l=10, r=10, t=10, b=10),
+                                   legend=dict(orientation="h", y=1.12))
+                st.plotly_chart(figC, use_container_width=True)
+
 
 # ======================================================================
 # Screen 4 -- Scenario comparison (review)
