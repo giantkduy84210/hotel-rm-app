@@ -316,17 +316,42 @@ elif page.startswith("3"):
             st.markdown(f"baseline: occ₀ {b['occ_0']}, ADR₀ €{b['ADR_0']:.2f}, "
                         f"target RevPAR €{res['target_revpar']:.2f}")
             tor = pd.DataFrame(res["tornado"])
-            st.markdown("**Tornado** (±20% per parameter; None = no finite solution "
-                        "— elasticity too close to −1):")
+            base_val = res["required_adr"]
+            st.markdown("**Tornado** — thanh mọc từ đáp án gốc, tay越长 = đáp án càng phụ thuộc "
+                        "tham số đó (±20% độc lập từng tham số):")
             fig = go.Figure()
+
+            def _span(row):
+                vals = [v for v in (row["low"], row["high"]) if v is not None]
+                return max((abs(v - base_val) for v in vals), default=0.0)
+
+            tor = (tor.assign(_span=tor.apply(_span, axis=1))
+                      .sort_values("_span", ascending=True))  # nhỏ dưới → to trên: dáng phễu
             for _, row in tor.iterrows():
-                fig.add_bar(y=[row["parameter"]], x=[row["low"]], orientation="h",
-                            marker_color="#EF553B", name="−20%", showlegend=False)
-                fig.add_bar(y=[row["parameter"]], x=[row["high"]], orientation="h",
-                            marker_color="#636EFA", name="+20%", showlegend=False)
-            fig.add_vline(x=res["required_adr"])
-            fig.update_layout(barmode="overlay", height=280,
-                              margin=dict(l=10, r=10, t=10, b=10),
+                label = row["parameter"]
+                notes = []
+                for v, color, tag in ((row["low"], "#EF553B", "−20%"),
+                                      (row["high"], "#636EFA", "+20%")):
+                    if v is None:
+                        notes.append(f"{tag}: no finite solution")
+                        continue
+                    if v <= base_val:      # tay trái: từ v tới base
+                        fig.add_bar(y=[label], x=[base_val - v], base=[v],
+                                    orientation="h", marker_color=color,
+                                    name=tag, showlegend=False)
+                    else:                  # tay phải: từ base tới v
+                        fig.add_bar(y=[label], x=[v - base_val], base=[base_val],
+                                    orientation="h", marker_color=color,
+                                    name=tag, showlegend=False)
+                if notes:
+                    fig.add_annotation(y=label, x=base_val, text="; ".join(notes),
+                                       showarrow=False, xanchor="left",
+                                       font=dict(size=9, color="#B91C1C"))
+            fig.add_vline(x=base_val, line_dash="dot",
+                          annotation_text=f"base = €{base_val:.2f}")
+            fig.update_yaxes(categoryorder="array",
+                             categoryarray=tor["parameter"].tolist())
+            fig.update_layout(height=320, margin=dict(l=10, r=10, t=25, b=10),
                               xaxis_title="required ADR (€)")
             st.plotly_chart(fig, use_container_width=True)
 
