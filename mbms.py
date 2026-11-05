@@ -210,6 +210,11 @@ def init_mbms(con: duckdb.DuckDBPyConnection) -> None:
             run_at        TIMESTAMP
         )""")
     now = datetime.now(timezone.utc)
+    # preserve stored evaluation metrics across re-initialisation: every script
+    # calls init_mbms(), and INSERT OR REPLACE would otherwise wipe the winners
+    # the backtest stored (M1's auto mode reads them)
+    existing = dict(con.execute(
+        "SELECT model_id, metrics FROM model_catalog").fetchall())
     for m in CATALOG:
         con.execute(
             "INSERT OR REPLACE INTO model_catalog VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -217,7 +222,7 @@ def init_mbms(con: duckdb.DuckDBPyConnection) -> None:
              m["classification"], json.dumps(m["variables"]),
              json.dumps(m["params_schema"]), json.dumps(m["assumptions"]),
              m["limitations"], m["method"], m["module_path"], m["version"],
-             None, now])
+             existing.get(m["model_id"]), now])
 
 
 # ----------------------------------------------------------------------
