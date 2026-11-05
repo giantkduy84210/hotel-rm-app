@@ -1,0 +1,8 @@
+pandas
+duckdb
+statsmodels
+scipy
+pulp
+streamlit
+plotly
+pytest

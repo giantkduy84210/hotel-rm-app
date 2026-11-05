@@ -1,0 +1,6 @@
+.venv/
+data/raw/
+warehouse/
+__pycache__/
+*.pyc
+experiments/results/
