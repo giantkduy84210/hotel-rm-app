@@ -4,3 +4,4 @@ warehouse/
 __pycache__/
 *.pyc
 experiments/results/
+.DS_Store
